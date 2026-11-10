@@ -7,12 +7,13 @@ const HistoryChart = defineAsyncComponent(() => import('./components/HistoryChar
 import TurnstileGate from './components/TurnstileGate.vue'
 import { createClient } from './lib/client.js'
 import { createLive } from './lib/live.js'
-import { apiBases, adminUrl, applyBatch, bytes, rate, number, finite, enabled, online, probes, probeValue, probeVisible, route, serverKey } from './lib/model.js'
+import { apiBases, adminUrl, applyBatch, bytes, rate, number, finite, enabled, online, uptime, capacity, price, expires, probes, probeValue, probeVisible, route, serverKey } from './lib/model.js'
 
 const pageOrigin = location.origin
 const sites = shallowRef([]), servers = shallowRef([]), history = shallowRef([]), stats = ref({}), statuses = ref({}), failures = ref({})
 const loading = ref(true), historyLoading = ref(false), error = ref(''), search = ref(''), group = ref('*'), hours = ref(0.167), tab = ref('资源')
 const selectedId = ref(route(location.hash)), selectedBase = ref(new URLSearchParams(location.hash.split('?')[1] || '').get('site') || '')
+const hiddenProbes = ref([]), smooth = ref(false), connectGaps = ref(false), rangeStart = ref(''), rangeEnd = ref('')
 const now = ref(Date.now()), savedTheme = ref(localStorage.getItem('cfsm_nebula_appearance'))
 const media = matchMedia('(prefers-color-scheme: dark)'), systemDark = ref(media.matches)
 const firstConfig = computed(() => sites.value[0]?.config || {})
@@ -23,11 +24,19 @@ const groupOptions = computed(() => [{label:'全部节点',value:'*'}, ...[...ne
 const filtered = computed(() => servers.value.filter(s => (group.value === '*' || (s.server_group || '未分组') === group.value) && [s.name,s.region,s.tags,s.os].join(' ').toLowerCase().includes(search.value.toLowerCase())).sort((a,b)=>number(a.sort_order)-number(b.sort_order) || String(a.id).localeCompare(String(b.id))))
 const totals = computed(() => {
   const list = Object.values(stats.value)
-  return {total:list.reduce((n,s)=>n+number(s.total),0),online:list.reduce((n,s)=>n+number(s.online),0),offline:list.reduce((n,s)=>n+number(s.offline),0),rx:servers.value.reduce((n,s)=>n+(online(s,now.value)?number(s.net_in_speed):0),0),tx:servers.value.reduce((n,s)=>n+(online(s,now.value)?number(s.net_out_speed):0),0),rxTraffic:servers.value.reduce((n,s)=>n+number(s.net_rx_monthly),0),txTraffic:servers.value.reduce((n,s)=>n+number(s.net_tx_monthly),0),traffic:servers.value.reduce((n,s)=>n+number(s.net_rx_monthly)+number(s.net_tx_monthly),0)}
+  return {total:list.reduce((n,s)=>n+number(s.total),0),online:list.reduce((n,s)=>n+number(s.online),0),offline:list.reduce((n,s)=>n+number(s.offline),0),rx:servers.value.reduce((n,s)=>n+(online(s,now.value)?number(s.net_in_speed):0),0),tx:servers.value.reduce((n,s)=>n+(online(s,now.value)?number(s.net_out_speed):0),0),rxTraffic:servers.value.reduce((n,s)=>n+number(s.net_rx),0),txTraffic:servers.value.reduce((n,s)=>n+number(s.net_tx),0),traffic:servers.value.reduce((n,s)=>n+number(s.net_rx_monthly)+number(s.net_tx_monthly),0)}
 })
 const speeds = shallowRef(new Map())
 const busyServer = computed(()=>servers.value.filter(s=>online(s,now.value)).sort((a,b)=>number(b.cpu)-number(a.cpu))[0])
-const activeProbes = computed(()=>probes({...currentSite.value?.config,...currentSite.value?.sys}).filter(p=>current.value && probeVisible(current.value,p.key)).filter(p=>history.value.some(r=>probeValue(r['ping_'+p.key]) !== undefined)))
+const activeProbes = computed(()=>probes({...currentSite.value?.config,...currentSite.value?.sys}).filter(p=>current.value && (probeVisible(current.value,p.key) || (current.value['loss_'+p.key] !== false && current.value['loss_'+p.key] !== 'false' && history.value.some(r=>finite(r['ping_'+p.key]) || finite(r['loss_'+p.key]))))).filter(p=>history.value.some(r=>probeValue(r['ping_'+p.key]) !== undefined || finite(r['loss_'+p.key]))))
+const historyOptions = computed(() => [{value:0.167,label:'10 分钟'},{value:0.5,label:'30 分钟'},{value:1,label:'1 小时'},{value:6,label:'6 小时'},{value:12,label:'12 小时'},{value:24,label:'24 小时'},...(enabled(currentSite.value?.config?.authorization) ? [{value:48,label:'2 天'},{value:96,label:'4 天'},{value:168,label:'7 天'}] : [])])
+const visibleHistory = computed(() => history.value.filter(r => (!rangeStart.value || number(r.timestamp) >= new Date(rangeStart.value).getTime()) && (!rangeEnd.value || number(r.timestamp) <= new Date(rangeEnd.value).getTime())))
+const detailFacts = computed(() => {
+ const s=current.value, sys=currentSite.value?.sys || {}; if(!s)return []
+ const specs=[['系统',[s.os,s.kernel_version].filter(Boolean).join(' · ')],['CPU',[s.cpu_info,s.cpu_cores ? s.cpu_cores + ' 核' : ''].filter(Boolean).join(' · ')],['内存 / 硬盘',capacity(s.ram_total)+' / '+capacity(s.disk_total)],['架构',[s.arch,finite(s.processes)?s.processes+' 进程':''].filter(Boolean).join(' · ')],['运行时间',uptime(s.boot_time,now.value)]]
+ if(enabled(sys.show_price) || enabled(sys.show_expire)) specs.push(['续费',[enabled(sys.show_price)?price(s):'',enabled(sys.show_expire)?(expires(s,new Date(now.value))?.label || '未设置到期日'):''].filter(Boolean).join(' · ')])
+ return specs
+})
 const colorList = ['#3b82f6','#8b5cf6','#f97316','#06b6d4','#22c55e','#eab308','#ec4899','#ef4444']
 const metric = (key, scale=1) => r => finite(r[key]) ? Number(r[key]) / scale : null
 const charts = computed(()=>tab.value === '资源' ? [
@@ -37,8 +46,8 @@ const charts = computed(()=>tab.value === '资源' ? [
   ...(history.value.some(r=>finite(r.disk_used)) ? [{title:'磁盘使用量',unit:'GB',series:[{label:'已用空间',color:colorList[2],read:metric('disk_used',1024)}]}] : []),
   ...(history.value.some(r=>r.disk && Object.values(r.disk).some(v=>number(v)>0)) ? [{title:'磁盘 IO',unit:'MB/s',series:[{label:'读取',color:colorList[3],read:r=>r.disk ? metric('read_bps',1024**2)(r.disk):null},{label:'写入',color:colorList[2],read:r=>r.disk ? metric('write_bps',1024**2)(r.disk):null}]}] : []),
 ] : [
-  {title:'网络延迟',unit:'ms',series:activeProbes.value.map((p,i)=>({label:p.name,color:colorList[i],read:r=>probeValue(r['ping_'+p.key]) ?? null}))},
-  {title:'丢包率',unit:'%',series:activeProbes.value.map((p,i)=>({label:p.name,color:colorList[i],read:r=>probeValue(r['loss_'+p.key]) ?? null}))},
+  {title:'网络延迟',unit:'ms',series:activeProbes.value.filter(p=>!hiddenProbes.value.includes(p.key)).map((p,i)=>({label:p.name,color:colorList[i],read:r=>probeValue(r['ping_'+p.key]) ?? null}))},
+  {title:'丢包率',unit:'%',series:activeProbes.value.filter(p=>!hiddenProbes.value.includes(p.key)).map((p,i)=>({label:p.name,color:colorList[i],read:r=>probeValue(r['loss_'+p.key]) ?? null}))},
 ])
 let controller, historyController, generation = 0, historyGeneration = 0, streams = [], clock, disposed = false
 let visibilityTimer
@@ -80,10 +89,16 @@ async function fetchSite(site, gen, signal) {
     if(detail && selectedBase.value && selectedBase.value!==site.base)return
     const path=detail?'/api/server?id='+encodeURIComponent(selectedId.value):'/api/servers'
     const data=await site.client.request(path,{signal})
+    // /api/server omits public display flags; fetch their authoritative source.
+    let detailSys = null
+    if (detail) {
+      try { detailSys = (await site.client.request('/api/servers',{signal})).sysConfig || {} }
+      catch (e) { if(signal.aborted) throw e; failures.value={...failures.value,[site.base]:'显示设置读取失败，敏感字段已隐藏'} }
+    }
     if(gen!==generation)return
     updateRows(site.base,detail?[data]:(data.servers || []))
-    updateSite(site.base,{sys:data.sysConfig || {},error:''})
-    failures.value={...failures.value,[site.base]:''}
+    updateSite(site.base,{sys:detail ? (detailSys || {show_price:false,show_expire:false,show_tf:false,show_three_net_details:false}) : (data.sysConfig || {}),error:''})
+    if (!detail || detailSys) failures.value={...failures.value,[site.base]:''}
     if(!detail)stats.value={...stats.value,[site.base]:data.stats || {}}
     startStream(site,detail?selectedId.value:null,detail?[selectedId.value]:(data.servers || []).map(s=>String(s.id)),gen)
   } catch(e) {
@@ -120,7 +135,7 @@ async function loadHistory() {
     if(seq!==historyGeneration || signal.aborted)return
     error.value=e.message
     if(e.status===403)updateSite(site.base,{needsVerify:true})
-    if(e.status===401)updateSite(site.base,{needsLogin:true})
+    if(e.status===401)error.value=hours.value>24?'该历史范围需要管理员登录':'历史数据需要登录或当前凭据已失效'
   } finally { if(seq===historyGeneration)historyLoading.value=false }
 }
 async function init() {
@@ -148,7 +163,7 @@ function syncRoute() {
   const raw=location.hash.split('?')[0]
   selectedId.value=route(raw)
   selectedBase.value=new URLSearchParams(location.hash.split('?')[1]||'').get('site') || ''
-  hours.value=0.167;tab.value='资源';loadPage();window.scrollTo(0,0)
+  hours.value=0.167;tab.value='资源';hiddenProbes.value=[];rangeStart.value='';rangeEnd.value='';loadPage();window.scrollTo(0,0)
 }
 function toggleTheme() {savedTheme.value=dark.value?'light':'dark';localStorage.setItem('cfsm_nebula_appearance',savedTheme.value)}
 function visibility() {
@@ -183,18 +198,19 @@ onBeforeUnmount(()=>{disposed=true;generation++;stopStreams();controller?.abort(
   <Spin v-if="loading" class="page-spinner" tip="正在加载服务器…"/>
   <template v-else-if="selectedId === null">
     <div class="page-title"><div><p class="eyebrow">INFRASTRUCTURE OVERVIEW</p><h1>一览你的服务器</h1><p class="muted">资源状态、网络流量与线路质量，一目了然。</p></div><Button @click="loadPage"><ReloadOutlined/>重新连接</Button></div>
-    <div class="summary-grid"><Card :bordered="false" class="summary-card"><div class="summary-icon"><DashboardOutlined/></div><div><small>实时网速</small><span class="summary-value blue-text">↓ {{ rate(totals.rx) }}</span><span class="summary-value green-text">↑ {{ rate(totals.tx) }}</span></div></Card><Card :bordered="false" class="summary-card"><div class="summary-icon"><HddOutlined/></div><div><small>节点</small><strong class="summary-value">{{ totals.online }} <span>/ {{ totals.total }}</span></strong><small>{{ totals.offline ? totals.offline + ' 台离线' : '全部在线' }}</small></div></Card><Card :bordered="false" class="summary-card"><div class="summary-icon"><StockOutlined/></div><div><small>最忙节点</small><span class="summary-value">{{ busyServer ? number(busyServer.cpu).toFixed(1)+'%' : '—' }}</span><small class="truncate summary-node-name">{{ busyServer?.name || '—' }}</small></div></Card><Card :bordered="false" class="summary-card"><div class="summary-icon"><SwapOutlined/></div><div><small>总流量</small><span class="summary-value blue-text">↓ {{ bytes(totals.rxTraffic) }}</span><span class="summary-value green-text">↑ {{ bytes(totals.txTraffic) }}</span></div></Card></div>
+    <div class="summary-grid"><Card :bordered="false" class="summary-card"><div class="summary-icon"><DashboardOutlined/></div><div><small>实时网速</small><span class="summary-value blue-text">↓ {{ rate(totals.rx) }}</span><span class="summary-value green-text">↑ {{ rate(totals.tx) }}</span></div></Card><Card :bordered="false" class="summary-card"><div class="summary-icon"><HddOutlined/></div><div><small>节点</small><strong class="summary-value">{{ totals.online }} <span>/ {{ totals.total }}</span></strong><small>{{ totals.offline ? totals.offline + ' 台离线' : '全部在线' }}</small></div></Card><Card :bordered="false" class="summary-card"><div class="summary-icon"><StockOutlined/></div><div><small>最忙节点</small><span class="summary-value">{{ busyServer ? number(busyServer.cpu).toFixed(1)+'%' : '—' }}</span><small class="truncate summary-node-name">{{ busyServer?.name || '—' }}</small></div></Card><Card :bordered="false" class="summary-card"><div class="summary-icon"><SwapOutlined/></div><div><small>累计流量</small><span class="summary-value blue-text">↓ {{ bytes(totals.rxTraffic) }}</span><span class="summary-value green-text">↑ {{ bytes(totals.txTraffic) }}</span></div></Card></div>
     <div class="toolbar"><Segmented v-model:value="group" :options="groupOptions" class="group-selector"/><Input v-model:value="search" allow-clear placeholder="搜索名称、区域、标签…" aria-label="搜索服务器" class="search-input"/></div>
     <div v-if="filtered.length" class="server-grid"><ServerCard v-for="s in filtered" :key="serverKey(s._base,s.id)" :server="s" :config="sites.find(x=>x.base===s._base)?.config || {}" :sys="sites.find(x=>x.base===s._base)?.sys || {}" :now="now" :speeds="speeds.get(serverKey(s._base,s.id)) || []" @open="open"/></div><Empty v-else description="暂无可显示的服务器"/>
   </template>
   <template v-else-if="current">
     <div class="page-title"><div><Button type="text" @click="back"><ArrowLeftOutlined/>返回概览</Button><h1>{{ current.name }}</h1><p class="muted">{{ current.cpu_info || '—' }} · {{ current.arch || '—' }} · {{ current.os || '—' }}</p></div></div>
-    <div class="detail-layout"><ServerCard :server="current" :config="currentSite.config" :sys="currentSite.sys" :now="now" :speeds="speeds.get(serverKey(current._base,current.id)) || []"/><Card class="detail-charts" :bordered="false"><div class="chart-toolbar"><Segmented v-model:value="tab" :options="['资源','网络延迟']"/><Select v-model:value="hours" aria-label="历史时间范围" style="width:132px" :options="[{value:0.167,label:'10 分钟'},{value:0.5,label:'30 分钟'},{value:1,label:'1 小时'},{value:6,label:'6 小时'},{value:12,label:'12 小时'},{value:24,label:'24 小时'},{value:48,label:'2 天'},{value:96,label:'4 天'},{value:168,label:'7 天'}]" @change="loadHistory"/></div><Spin v-if="historyLoading" class="page-spinner"/><div v-else-if="history.length" class="charts-grid"><template v-for="chart in charts" :key="chart.title"><HistoryChart v-if="chart.series.length" :rows="history" :series="chart.series" :title="chart.title" :unit="chart.unit" :dark="dark"/></template><Empty v-if="tab==='网络延迟' && !activeProbes.length" description="暂无线路探测数据"/></div><Empty v-else description="暂无历史数据"/><p class="muted chart-footnote">历史点为后端实际采样；未配置及超时不会伪装成 0。切换资源/延迟标签不会额外查询。</p></Card></div>
+    <div class="detail-facts"><div v-for="fact in detailFacts" :key="fact[0]" class="detail-fact"><small>{{ fact[0] }}</small><strong>{{ fact[1] || '—' }}</strong></div></div>
+    <div class="detail-layout"><ServerCard :server="current" :config="currentSite.config" :sys="currentSite.sys" :now="now" :speeds="speeds.get(serverKey(current._base,current.id)) || []"/><Card class="detail-charts" :bordered="false"><div class="chart-toolbar"><Segmented v-model:value="tab" :options="['资源','网络延迟']"/><Select v-model:value="hours" aria-label="历史时间范围" style="width:132px" :options="historyOptions" @change="loadHistory"/></div><div class="chart-controls"><label>开始 <input v-model="rangeStart" type="datetime-local" /></label><label>结束 <input v-model="rangeEnd" type="datetime-local" /></label><Button size="small" @click="rangeStart='';rangeEnd=''">重置范围</Button><template v-if="tab==='网络延迟'"><label><input v-model="smooth" type="checkbox" /> 平滑曲线</label><label><input v-model="connectGaps" type="checkbox" /> 断点连线</label><label v-for="p in activeProbes" :key="p.key"><input v-model="hiddenProbes" type="checkbox" :value="p.key" /> 隐藏 {{ p.name }}</label></template></div><Spin v-if="historyLoading" class="page-spinner"/><div v-else-if="visibleHistory.length" class="charts-grid"><template v-for="chart in charts" :key="chart.title"><HistoryChart v-if="chart.series.length" :rows="visibleHistory" :series="chart.series" :title="chart.title" :unit="chart.unit" :dark="dark" :smooth="tab==='网络延迟' && smooth" :connect-gaps="tab==='网络延迟' && connectGaps"/></template><Empty v-if="tab==='网络延迟' && (!activeProbes.length || hiddenProbes.length===activeProbes.length)" description="暂无可显示线路"/></div><Empty v-else description="暂无历史数据"/><p class="muted chart-footnote">历史点为后端实际采样；线路目标全超时时可能无法区分未配置。平滑仅改变曲线外观，不修改数据。</p></Card></div>
   </template>
   <Empty v-else-if="selectedId !== null" description="服务器不存在、未公开或数据加载失败"><Button @click="back">返回概览</Button></Empty>
   <Button v-if="error && !sites.length" @click="init">重试加载</Button>
 </main>
-<footer class="site-footer"><a href="https://github.com/huilang-me/CF-Server-Monitor/" target="_blank" rel="noopener noreferrer">Powered by CF-Server-Monitor {{ firstConfig.version }}</a><span> · Nebula 移植版 0.1.3</span></footer>
+<footer class="site-footer"><a href="https://github.com/huilang-me/CF-Server-Monitor/" target="_blank" rel="noopener noreferrer">Powered by CF-Server-Monitor {{ firstConfig.version }}</a><span> · Nebula 移植版 0.2.0</span></footer>
 </div>
 </ConfigProvider>
 </template>

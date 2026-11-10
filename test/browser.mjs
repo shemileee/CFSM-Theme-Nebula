@@ -13,7 +13,7 @@ const fixtures=[
  {id:'cn-uuid',name:'CN · Home Lab',region:'CN',server_group:'家庭',os:'Debian 12',cpu:51,ram_total:16384,ram_used:8800,disk_total:204800,disk_used:55300,net_in_speed:0,net_out_speed:0,price:'',traffic_limit:'0'},
 ]
 let checks=0
-async function scenario({privateSite=false,turnstile=false,authenticated=false,mobile=false}={}) {
+async function scenario({privateSite=false,turnstile=false,authenticated=false,mobile=false,hidden=false}={}) {
  const context=await browser.newContext({viewport:mobile?{width:390,height:844}:{width:1440,height:1000},colorScheme:'light'})
  const page=await context.newPage()
  page.on('pageerror',e=>errors.push(e.message))
@@ -33,8 +33,8 @@ async function scenario({privateSite=false,turnstile=false,authenticated=false,m
   if(turnstile&&!headers['x-turnstile-verified'])return r.fulfill({status:403,json:{}})
   const now=Date.now()
   const rows=fixtures.map((s,i)=>({...s,last_updated:now-(i===2?400000:0),timestamp:now,ping_node_1:null,loss_node_1:null,ping_node_2:null,loss_node_2:false,ping_node_3:null,loss_node_3:null,ping_node_4:null,loss_node_4:null,net_rx_monthly:s.net_rx_monthly||0,net_tx_monthly:s.net_tx_monthly||0,ping:[...Array(14)].map((_,j)=>({ts:now-(14-j)*360000,ct:i===0?70+j*5:30,cu:0,cm:j===5?null:110})),loss:[...Array(14)].map((_,j)=>({ts:now-(14-j)*360000,ct:j===5?null:0,cu:0,cm:100}))}))
-  if(url.pathname==='/api/servers')return r.fulfill({json:{servers:rows,stats:{total:3,online:2,offline:1},sysConfig:{show_three_net_details:true,show_price:true,show_expire:true,show_tf:true}}})
-  if(url.pathname==='/api/server')return r.fulfill({json:{...rows.find(s=>s.id===url.searchParams.get('id')),sysConfig:{show_three_net_details:true}}})
+  if(url.pathname==='/api/servers')return r.fulfill({json:{servers:rows,stats:{total:3,online:2,offline:1},sysConfig:{show_three_net_details:true,show_price:!hidden,show_expire:!hidden,show_tf:!hidden}}})
+  if(url.pathname==='/api/server')return r.fulfill({json:{...rows.find(s=>s.id===url.searchParams.get('id')),sysConfig:{long_history_points:100}}})
   if(url.pathname==='/api/history/all')return r.fulfill({json:[...Array(20)].map((_,i)=>({timestamp:now-(20-i)*30000,cpu:20+i,ram_used:3000+i*5,swap_used:64,net_in_speed:100000+i*10000,net_out_speed:50000, disk_used:34560,ping_ct:i===8?null:80+i,loss_ct:0,ping_cu:0,loss_cu:0}))})
   return r.fulfill({status:404,json:{}})
  })
@@ -76,20 +76,27 @@ async function scenario({privateSite=false,turnstile=false,authenticated=false,m
  await page.getByLabel('搜索服务器').fill('')
  await page.getByRole('button',{name:'US · Nebula One',exact:true}).click()
  await page.locator('canvas').first().waitFor()
+ assert.equal(await page.locator('.detail-fact').count(),hidden?5:6)
+ assert.equal(await page.locator('.server-card .traffic').count(),hidden?0:1)
+ assert.equal(await page.locator('.server-card .expiry').count(),hidden?0:1)
+ await page.getByLabel('历史时间范围').click()
+ assert.equal(await page.getByTitle('7 天').count(),authenticated?1:0)
+ await page.keyboard.press('Escape')
  assert.equal(calls.filter(p=>p.startsWith('/api/server?')).length,1)
  assert.equal(calls.filter(p=>p.startsWith('/api/history/all')).length,1)
  assert.ok(subscriptions.at(-1).includes('subscribe=us-uuid'))
  assert.ok(calls.at(-1).includes('hours=0.167'))
  await page.getByText('网络延迟',{exact:true}).click()
+ await page.getByLabel('平滑曲线').check(); await page.getByLabel('断点连线').check()
  assert.equal(calls.filter(p=>p.startsWith('/api/history/all')).length,1,'tab reuses history')
  await page.getByLabel('切换深色').click();assert.equal(await page.locator('html').getAttribute('class'),'dark')
  if(!privateSite&&!turnstile&&!mobile)await page.screenshot({path:'test-results/detail-dark.png',fullPage:true})
  await page.reload();await page.locator('canvas').first().waitFor()
- assert.equal(calls.filter(p=>p==='/api/servers').length,1,'direct detail refresh never loads full list')
+ assert.equal(calls.filter(p=>p==='/api/servers').length,3,'detail loads authoritative display settings on navigation and refresh')
  checks++;await context.close()
 }
 try{
- await scenario();await scenario({mobile:true})
+ await scenario();await scenario({mobile:true});await scenario({hidden:true})
  await scenario({turnstile:true})
  await scenario({privateSite:true})
  await scenario({privateSite:true,authenticated:true})

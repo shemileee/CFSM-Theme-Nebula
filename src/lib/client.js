@@ -14,7 +14,6 @@ export function createClient(base, storage = localStorage) {
     }
     const res = await fetch(new URL(path, base), { headers, signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(20000)]) : AbortSignal.timeout(20000), credentials: new URL(base).origin === location.origin ? 'same-origin' : 'omit', cache: 'no-store' })
     if (!res.ok) {
-      if (res.status === 401) storage.removeItem('jwt_token')
       if (res.status === 403) storage.removeItem(key)
       throw new HttpError(res.status, ({401:'需要登录，请使用原管理后台登录后返回',403:'人机验证已失效，请重新验证',409:'数据库需要管理员升级',404:'服务器不存在或未公开'})[res.status] || '请求失败（HTTP ' + res.status + '）')
     }

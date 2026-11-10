@@ -1,7 +1,12 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { applyBatch, apiBases, traffic, price, expires, probeValue, online, capacity, route, serverKey, percent, probeVisible } from '../src/lib/model.js'
+import { applyBatch, apiBases, traffic, price, expires, probeValue, online, capacity, route, serverKey, percent, probeVisible, uptime } from '../src/lib/model.js'
 
+test('uptime accepts seconds, milliseconds and ISO dates',()=>{
+ const now=Date.parse('2026-01-02T01:00:00Z'), boot=Date.parse('2026-01-01T00:00:00Z')
+ for(const value of [boot,boot/1000,'2026-01-01T00:00:00Z']) assert.equal(uptime(value,now),'1 天 1 小时')
+ assert.equal(uptime(null,now),'—')
+})
 test('CFSM capacity MB, traffic GB and direction semantics',()=>{
  assert.equal(capacity(1024),'1.00 GB')
  const s={net_rx_monthly:20,net_tx_monthly:30,traffic_limit:'100'}

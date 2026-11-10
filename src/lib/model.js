@@ -44,8 +44,18 @@ export function probeVisible(server, key) {
   const lastLoss = Array.isArray(server.loss) ? server.loss.at(-1)?.[key] : undefined
   if (disabled(loss) || ((loss === null || loss === undefined || loss === '') && disabled(lastLoss))) return false
   if (!key.startsWith('node_')) return true
+  // Without an explicit configured/disabled flag all-null data is ambiguous.
+  // Keep a previously demonstrated target visible even through total loss.
   return finite(server['ping_' + key]) || finite(loss) ||
     ['ping', 'loss'].some(field => Array.isArray(server[field]) && server[field].some(point => finite(point[key])))
+}
+export function uptime(boot, now = Date.now()) {
+  let timestamp = typeof boot === 'string' && !/^\d+$/.test(boot) ? Date.parse(boot) : number(boot)
+  if (timestamp > 0 && timestamp < 1e12) timestamp *= 1000
+  if (!timestamp || timestamp > now) return '—'
+  const minutes = Math.floor((now - timestamp) / 60000)
+  const days = Math.floor(minutes / 1440), hours = Math.floor(minutes % 1440 / 60)
+  return days ? `${days} 天 ${hours} 小时` : hours ? `${hours} 小时 ${minutes % 60} 分` : `${minutes} 分`
 }
 export function probes(config) {
   return ['ct','cu','cm','bd','node_1','node_2','node_3','node_4'].map((key, i) => ({ key, name: i < 4 ? config['custom_' + key + '_name'] || ['电信','联通','移动','BGP'][i] : config[key + '_name'] || 'Node ' + (i - 3) }))

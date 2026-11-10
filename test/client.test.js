@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createClient } from '../src/lib/client.js'
 
-test('config cache, per-backend Turnstile credential, JWT and 401/403 cleanup',async()=>{
+test('config cache, per-backend Turnstile credential, JWT and safe 401/403 handling',async()=>{
  const oldFetch=globalThis.fetch,oldLocation=globalThis.location
  globalThis.location={origin:'https://api.example'}
  const data=new Map([['jwt_token','mock-jwt']])
@@ -21,7 +21,7 @@ test('config cache, per-backend Turnstile credential, JWT and 401/403 cleanup',a
   await assert.rejects(client.request('/api/servers'),e=>e.status===403)
   assert.equal(data.has('cfsm_nebula_verified:https://api.example'),false)
   await assert.rejects(client.request('/api/servers'),e=>e.status===401)
-  assert.equal(data.has('jwt_token'),false)
+  assert.equal(data.get('jwt_token'),'mock-jwt')
  } finally{globalThis.fetch=oldFetch;globalThis.location=oldLocation}
 })
 
