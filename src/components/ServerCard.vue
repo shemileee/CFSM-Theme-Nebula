@@ -4,7 +4,7 @@ import { Button, Card, Tag } from 'ant-design-vue'
 import { ArrowDownOutlined, ArrowUpOutlined } from '@ant-design/icons-vue'
 import PixelMeter from './PixelMeter.vue'
 import SparkBars from './SparkBars.vue'
-import { bytes, capacity, rate, number, finite, online, percent, traffic, price, expires, probes, probeValue, enabled } from '../lib/model.js'
+import { bytes, capacity, rate, number, finite, online, percent, traffic, price, expires, probes, probeValue, probeVisible, enabled } from '../lib/model.js'
 const props = defineProps({ server: Object, config: Object, sys: Object, now: Number, speeds: { default: () => [] } })
 const emit = defineEmits(['open'])
 const alive = computed(() => online(props.server, props.now))
@@ -16,7 +16,7 @@ const meters = computed(() => [
   { name: '磁盘', value: percent(props.server.disk_used, props.server.disk_total), detail: capacity(props.server.disk_used) + ' / ' + capacity(props.server.disk_total), color: 'orange' },
   ...(number(props.server.swap_total) > 0 ? [{ name: 'Swap', value: percent(props.server.swap_used, props.server.swap_total), detail: capacity(props.server.swap_used) + ' / ' + capacity(props.server.swap_total), color: 'cyan' }] : []),
 ])
-const lines = computed(() => !enabled(props.sys?.show_three_net_details) ? [] : probes(props.config).map(p => ({ ...p, value: probeValue(props.server['ping_' + p.key]), loss: probeValue(props.server['loss_' + p.key]), points: (props.server.ping || []).filter(v => probeValue(v[p.key]) !== undefined).map(v => ({ ts: v.ts, value: probeValue(v[p.key]) })) })).filter(p => p.value !== undefined || p.points.length))
+const lines = computed(() => !enabled(props.sys?.show_three_net_details) ? [] : probes({...props.config,...props.sys}).filter(p => probeVisible(props.server,p.key)).map(p => ({ ...p, value: probeValue(props.server['ping_' + p.key]), loss: probeValue(props.server['loss_' + p.key]), points: (props.server.ping || []).filter(v => probeValue(v[p.key]) !== undefined).map(v => ({ ts: v.ts, value: probeValue(v[p.key]) })) })).filter(p => p.value !== undefined || p.points.length))
 const expanded = ref(false)
 const visibleLines = computed(() => expanded.value ? lines.value : lines.value.slice(0, 2))
 const lossColor = v => v === undefined || v === null ? '' : v === 0 ? 'good' : v < 1 ? 'warn' : v < 5 ? 'slow' : 'bad'

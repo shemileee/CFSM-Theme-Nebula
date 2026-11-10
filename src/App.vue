@@ -7,7 +7,7 @@ const HistoryChart = defineAsyncComponent(() => import('./components/HistoryChar
 import TurnstileGate from './components/TurnstileGate.vue'
 import { createClient } from './lib/client.js'
 import { createLive } from './lib/live.js'
-import { apiBases, adminUrl, applyBatch, bytes, rate, number, finite, enabled, online, probes, probeValue, route, serverKey } from './lib/model.js'
+import { apiBases, adminUrl, applyBatch, bytes, rate, number, finite, enabled, online, probes, probeValue, probeVisible, route, serverKey } from './lib/model.js'
 
 const pageOrigin = location.origin
 const sites = shallowRef([]), servers = shallowRef([]), history = shallowRef([]), stats = ref({}), statuses = ref({}), failures = ref({})
@@ -27,7 +27,7 @@ const totals = computed(() => {
 })
 const speeds = shallowRef(new Map())
 const busyServer = computed(()=>servers.value.filter(s=>online(s,now.value)).sort((a,b)=>number(b.cpu)-number(a.cpu))[0])
-const activeProbes = computed(()=>probes(currentSite.value?.config || {}).filter(p=>history.value.some(r=>probeValue(r['ping_'+p.key]) !== undefined)))
+const activeProbes = computed(()=>probes({...currentSite.value?.config,...currentSite.value?.sys}).filter(p=>current.value && probeVisible(current.value,p.key)).filter(p=>history.value.some(r=>probeValue(r['ping_'+p.key]) !== undefined)))
 const colorList = ['#3b82f6','#8b5cf6','#f97316','#06b6d4','#22c55e','#eab308','#ec4899','#ef4444']
 const metric = (key, scale=1) => r => finite(r[key]) ? Number(r[key]) / scale : null
 const charts = computed(()=>tab.value === '资源' ? [
@@ -194,7 +194,7 @@ onBeforeUnmount(()=>{disposed=true;generation++;stopStreams();controller?.abort(
   <Empty v-else-if="selectedId !== null" description="服务器不存在、未公开或数据加载失败"><Button @click="back">返回概览</Button></Empty>
   <Button v-if="error && !sites.length" @click="init">重试加载</Button>
 </main>
-<footer class="site-footer"><a href="https://github.com/huilang-me/CF-Server-Monitor/" target="_blank" rel="noopener noreferrer">Powered by CF-Server-Monitor {{ firstConfig.version }}</a><span> · Nebula 移植版 0.1.1</span></footer>
+<footer class="site-footer"><a href="https://github.com/huilang-me/CF-Server-Monitor/" target="_blank" rel="noopener noreferrer">Powered by CF-Server-Monitor {{ firstConfig.version }}</a><span> · Nebula 移植版 0.1.2</span></footer>
 </div>
 </ConfigProvider>
 </template>

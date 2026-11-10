@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { applyBatch, apiBases, traffic, price, expires, probeValue, online, capacity, route, serverKey, percent } from '../src/lib/model.js'
+import { applyBatch, apiBases, traffic, price, expires, probeValue, online, capacity, route, serverKey, percent, probeVisible } from '../src/lib/model.js'
 
 test('CFSM capacity MB, traffic GB and direction semantics',()=>{
  assert.equal(capacity(1024),'1.00 GB')
@@ -36,4 +36,14 @@ test('incremental batch keeps missing disk/memory, supports payload/metrics, ign
  const result=applyBatch(rows,{type:'batchUpdate',updates:[{serverId:'unknown',samples:[{ts:1000,data:{cpu:99}}]},{serverId:'uuid',samples:[{ts:300,metrics:{cpu:30}},{ts:200,payload:{cpu:20,ping_ct:null}},{ts:50,data:{disk_total:1}},{ts:400,data:{name:'tampered',__proto__:{},cpu:40}}]}]})
  assert.equal(result[0].cpu,40);assert.equal(result[0].disk_total,4096);assert.equal(result[0].ram_total,1024);assert.equal(result[0].ping_ct,null);assert.equal(result[0].name,undefined);assert.equal(result[0].last_updated,400)
  assert.equal(rows[0].cpu,1)
+})
+
+test('empty optional nodes are hidden, disabled loss beats stale ping, numeric zero remains valid',()=>{
+ assert.equal(probeVisible({ping_node_1:null,loss_node_1:null,ping:[{node_1:null}]},'node_1'),false)
+ assert.equal(probeVisible({ping_node_1:80,loss_node_1:false},'node_1'),false)
+ assert.equal(probeVisible({ping_node_1:80,loss:[{node_1:false}]},'node_1'),false)
+ assert.equal(probeVisible({ping_node_1:80,loss_node_1:'false'},'node_1'),false)
+ assert.equal(probeVisible({ping_node_1:0,loss_node_1:0},'node_1'),true)
+ assert.equal(probeVisible({ping_node_1:null,loss_node_1:100},'node_1'),true)
+ assert.equal(probeVisible({ping_node_1:null,ping:[{node_1:50},{node_1:null}]},'node_1'),true)
 })

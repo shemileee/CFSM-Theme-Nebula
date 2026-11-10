@@ -36,6 +36,17 @@ export function expires(s, now = new Date()) {
   return { days, label: days > 3650 ? '长期' : days < 0 ? '已过期' : days === 0 ? '今日到期' : days + ' 天' }
 }
 export const probeValue = v => v === null ? null : finite(v) ? Number(v) : undefined
+// CFSM uses loss=false for disabled probes. null alone cannot establish
+// that an optional target exists: empty Node slots may report null ping.
+export function probeVisible(server, key) {
+  const disabled = v => v === false || v === 'false'
+  const loss = server['loss_' + key]
+  const lastLoss = Array.isArray(server.loss) ? server.loss.at(-1)?.[key] : undefined
+  if (disabled(loss) || ((loss === null || loss === undefined || loss === '') && disabled(lastLoss))) return false
+  if (!key.startsWith('node_')) return true
+  return finite(server['ping_' + key]) || finite(loss) ||
+    ['ping', 'loss'].some(field => Array.isArray(server[field]) && server[field].some(point => finite(point[key])))
+}
 export function probes(config) {
   return ['ct','cu','cm','bd','node_1','node_2','node_3','node_4'].map((key, i) => ({ key, name: i < 4 ? config['custom_' + key + '_name'] || ['电信','联通','移动','BGP'][i] : config[key + '_name'] || 'Node ' + (i - 3) }))
 }
