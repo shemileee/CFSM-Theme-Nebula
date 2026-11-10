@@ -1,7 +1,7 @@
 <script setup>
 import { computed, defineAsyncComponent, onMounted, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 import { ConfigProvider, theme, Button, Alert, Input, Select, Segmented, Spin, Empty, Card } from 'ant-design-vue'
-import { CloudOutlined as MoonOutlined, BulbOutlined as SunOutlined, SettingOutlined, ReloadOutlined, ArrowLeftOutlined } from '@ant-design/icons-vue'
+import { CloudOutlined as MoonOutlined, BulbOutlined as SunOutlined, SettingOutlined, ReloadOutlined, ArrowLeftOutlined, DashboardOutlined, HddOutlined, StockOutlined, SwapOutlined } from '@ant-design/icons-vue'
 import ServerCard from './components/ServerCard.vue'
 const HistoryChart = defineAsyncComponent(() => import('./components/HistoryChart.vue'))
 import TurnstileGate from './components/TurnstileGate.vue'
@@ -23,7 +23,7 @@ const groupOptions = computed(() => [{label:'全部节点',value:'*'}, ...[...ne
 const filtered = computed(() => servers.value.filter(s => (group.value === '*' || (s.server_group || '未分组') === group.value) && [s.name,s.region,s.tags,s.os].join(' ').toLowerCase().includes(search.value.toLowerCase())).sort((a,b)=>number(a.sort_order)-number(b.sort_order) || String(a.id).localeCompare(String(b.id))))
 const totals = computed(() => {
   const list = Object.values(stats.value)
-  return {total:list.reduce((n,s)=>n+number(s.total),0),online:list.reduce((n,s)=>n+number(s.online),0),offline:list.reduce((n,s)=>n+number(s.offline),0),rx:servers.value.reduce((n,s)=>n+(online(s,now.value)?number(s.net_in_speed):0),0),tx:servers.value.reduce((n,s)=>n+(online(s,now.value)?number(s.net_out_speed):0),0),traffic:servers.value.reduce((n,s)=>n+number(s.net_rx_monthly)+number(s.net_tx_monthly),0)}
+  return {total:list.reduce((n,s)=>n+number(s.total),0),online:list.reduce((n,s)=>n+number(s.online),0),offline:list.reduce((n,s)=>n+number(s.offline),0),rx:servers.value.reduce((n,s)=>n+(online(s,now.value)?number(s.net_in_speed):0),0),tx:servers.value.reduce((n,s)=>n+(online(s,now.value)?number(s.net_out_speed):0),0),rxTraffic:servers.value.reduce((n,s)=>n+number(s.net_rx_monthly),0),txTraffic:servers.value.reduce((n,s)=>n+number(s.net_tx_monthly),0),traffic:servers.value.reduce((n,s)=>n+number(s.net_rx_monthly)+number(s.net_tx_monthly),0)}
 })
 const speeds = shallowRef(new Map())
 const busyServer = computed(()=>servers.value.filter(s=>online(s,now.value)).sort((a,b)=>number(b.cpu)-number(a.cpu))[0])
@@ -183,7 +183,7 @@ onBeforeUnmount(()=>{disposed=true;generation++;stopStreams();controller?.abort(
   <Spin v-if="loading" class="page-spinner" tip="正在加载服务器…"/>
   <template v-else-if="selectedId === null">
     <div class="page-title"><div><p class="eyebrow">INFRASTRUCTURE OVERVIEW</p><h1>一览你的服务器</h1><p class="muted">资源状态、网络流量与线路质量，一目了然。</p></div><Button @click="loadPage"><ReloadOutlined/>重新连接</Button></div>
-    <div class="summary-grid"><Card :bordered="false" class="summary-card"><div class="summary-icon blue-text">↓↑</div><div><small>实时网络速率</small><strong class="summary-value blue-text">↓ {{ rate(totals.rx) }}</strong><small class="green-text">↑ {{ rate(totals.tx) }}</small></div></Card><Card :bordered="false" class="summary-card"><div class="summary-icon healthy">◉</div><div><small>节点在线</small><strong class="summary-value">{{ totals.online }} <span>/ {{ totals.total }}</span></strong><small>{{ totals.offline }} 台离线</small></div></Card><Card :bordered="false" class="summary-card"><div class="summary-icon violet-text">▥</div><div><small>最忙节点</small><strong class="summary-value truncate">{{ busyServer?.name || '—' }}</strong><small>CPU {{ busyServer ? number(busyServer.cpu).toFixed(1)+'%' : '—' }}</small></div></Card><Card :bordered="false" class="summary-card"><div class="summary-icon orange-text">⇄</div><div><small>本期双向流量</small><strong class="summary-value">{{ bytes(totals.traffic) }}</strong><small>上传 + 下载实际总量</small></div></Card></div>
+    <div class="summary-grid"><Card :bordered="false" class="summary-card"><div class="summary-icon"><DashboardOutlined/></div><div><small>实时网速</small><span class="summary-value blue-text">↓ {{ rate(totals.rx) }}</span><span class="summary-value green-text">↑ {{ rate(totals.tx) }}</span></div></Card><Card :bordered="false" class="summary-card"><div class="summary-icon"><HddOutlined/></div><div><small>节点</small><strong class="summary-value">{{ totals.online }} <span>/ {{ totals.total }}</span></strong><small>{{ totals.offline ? totals.offline + ' 台离线' : '全部在线' }}</small></div></Card><Card :bordered="false" class="summary-card"><div class="summary-icon"><StockOutlined/></div><div><small>最忙节点</small><span class="summary-value">{{ busyServer ? number(busyServer.cpu).toFixed(1)+'%' : '—' }}</span><small class="truncate summary-node-name">{{ busyServer?.name || '—' }}</small></div></Card><Card :bordered="false" class="summary-card"><div class="summary-icon"><SwapOutlined/></div><div><small>总流量</small><span class="summary-value blue-text">↓ {{ bytes(totals.rxTraffic) }}</span><span class="summary-value green-text">↑ {{ bytes(totals.txTraffic) }}</span></div></Card></div>
     <div class="toolbar"><Segmented v-model:value="group" :options="groupOptions" class="group-selector"/><Input v-model:value="search" allow-clear placeholder="搜索名称、区域、标签…" aria-label="搜索服务器" class="search-input"/></div>
     <div v-if="filtered.length" class="server-grid"><ServerCard v-for="s in filtered" :key="serverKey(s._base,s.id)" :server="s" :config="sites.find(x=>x.base===s._base)?.config || {}" :sys="sites.find(x=>x.base===s._base)?.sys || {}" :now="now" :speeds="speeds.get(serverKey(s._base,s.id)) || []" @open="open"/></div><Empty v-else description="暂无可显示的服务器"/>
   </template>
@@ -194,7 +194,7 @@ onBeforeUnmount(()=>{disposed=true;generation++;stopStreams();controller?.abort(
   <Empty v-else-if="selectedId !== null" description="服务器不存在、未公开或数据加载失败"><Button @click="back">返回概览</Button></Empty>
   <Button v-if="error && !sites.length" @click="init">重试加载</Button>
 </main>
-<footer class="site-footer"><a href="https://github.com/huilang-me/CF-Server-Monitor/" target="_blank" rel="noopener noreferrer">Powered by CF-Server-Monitor {{ firstConfig.version }}</a><span> · Nebula 移植版 0.1.2</span></footer>
+<footer class="site-footer"><a href="https://github.com/huilang-me/CF-Server-Monitor/" target="_blank" rel="noopener noreferrer">Powered by CF-Server-Monitor {{ firstConfig.version }}</a><span> · Nebula 移植版 0.1.3</span></footer>
 </div>
 </ConfigProvider>
 </template>

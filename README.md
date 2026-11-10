@@ -1,6 +1,10 @@
-# CFSM Theme Nebula 0.1.2
+# CFSM Theme Nebula 0.1.3
 
 为 [CF-Server-Monitor](https://github.com/huilang-me/CF-Server-Monitor) 移植的 Nebula 像素方块风主题。独立 Vue 3 + Vite 前端，交互控件采用 Ant Design Vue；不修改 Worker、D1、Agent 或管理后台。
+
+## 0.1.3 修正
+
+汇总栏按参考图统一：中性描边图标、实时网速/节点/最忙节点/总流量标题、常规字重；最忙节点百分比在前、名称在后；总流量分别展示月度下载和上传累计，不再显示双向合计。
 
 ## 0.1.2 修正
 
